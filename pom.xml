@@ -26,25 +26,6 @@
         </developer>
     </developers>
 
-    <distributionManagement>
-        <repository>
-            <id>internal.repo</id>
-            <name>Temporary Staging Repository</name>
-            <url>file://${project.build.directory}/mvn-repo</url>
-        </repository>
-    </distributionManagement>
-
-    <repositories>
-        <repository>
-            <id>ancevt-commons-mvn-repo</id>
-            <url>https://raw.github.com/Anc3vt/ancevt-commons/mvn-repo/</url>
-            <snapshots>
-                <enabled>true</enabled>
-                <updatePolicy>always</updatePolicy>
-            </snapshots>
-        </repository>
-    </repositories>
-
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -61,11 +42,43 @@
         <maven-source-plugin.version>3.2.1</maven-source-plugin.version>
     </properties>
 
+    <distributionManagement>
+        <repository>
+            <id>ancevt</id>
+            <name>Ancevt packages repository</name>
+            <url>https://packages.ancevt.com/releases</url>
+        </repository>
+        <snapshotRepository>
+            <id>ancevt-snapshots</id>
+            <name>Ancevt packages repository (snapshots)</name>
+            <url>https://packages.ancevt.com/snapshots</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <repositories>
+        <repository>
+            <id>ancevt</id>
+            <url>https://packages.ancevt.com/releases</url>
+            <snapshots>
+                <enabled>false</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>ancevt-snapshot</id>
+            <url>https://packages.ancevt.com/snapshots</url>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>com.ancevt.commons</groupId>
             <artifactId>ancevt-commons</artifactId>
-            <version>1.0.0.3</version>
+            <version>1.0.0.4</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>

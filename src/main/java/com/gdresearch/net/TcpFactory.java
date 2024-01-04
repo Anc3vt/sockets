@@ -30,32 +30,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.server;
+package com.gdresearch.net;
 
-import com.ancevt.net.connection.IConnection;
+import com.gdresearch.net.connection.IConnection;
+import com.gdresearch.net.connection.TcpConnection;
+import com.gdresearch.net.server.IServer;
+import com.gdresearch.net.server.TcpServer;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
+public class TcpFactory {
 
-public interface IServer {
+    public static @NotNull IServer createServer() {
+        return TcpServer.create();
+    }
 
-    void listen(String host, int port);
-
-    void asyncListen(String host, int port);
-
-    boolean asyncListenAndAwait(String host, int port);
-
-    boolean asyncListenAndAwait(String host, int port, long time, TimeUnit timeUnit);
-
-    boolean isListening();
-
-    void close();
-
-    void addServerListener(ServerListener listener);
-
-    void removeServerListener(ServerListener listener);
-
-    Set<IConnection> getConnections();
-
-    void sendToAll(byte[] bytes);
+    public static @NotNull IConnection createConnection(int id) {
+        return TcpConnection.create(id);
+    }
 }

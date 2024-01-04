@@ -30,11 +30,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.connection;
+package com.gdresearch.net.connection;
 
 import com.ancevt.commons.io.ByteOutput;
 import com.ancevt.commons.unix.UnixDisplay;
-import com.ancevt.net.CloseStatus;
+import com.gdresearch.net.CloseStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
@@ -42,7 +42,9 @@ import org.jetbrains.annotations.NotNull;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
@@ -108,11 +110,11 @@ public class TcpConnection implements IConnection {
                 dispatchConnectionEstablished();
             }
 
-            var in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-            var byteOutput = ByteOutput.newInstance();
+            InputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            ByteOutput byteOutput = ByteOutput.newInstance();
 
             while (isOpen()) {
-                int len = in.readInt();
+                int len = readInt(in);
                 bytesLoaded += 4;
                 int left = len;
                 while (left > 0) {
@@ -133,6 +135,16 @@ public class TcpConnection implements IConnection {
             closeIfOpen();
         }
         closeIfOpen();
+    }
+
+    private static int readInt(InputStream in) throws IOException {
+        int ch1 = in.read();
+        int ch2 = in.read();
+        int ch3 = in.read();
+        int ch4 = in.read();
+        if ((ch1 | ch2 | ch3 | ch4) < 0)
+            throw new EOFException();
+        return ((ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0));
     }
 
     @Override

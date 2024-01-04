@@ -30,10 +30,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.server;
+package com.gdresearch.net.server;
 
-import com.ancevt.net.CloseStatus;
-import com.ancevt.net.connection.IConnection;
+import com.gdresearch.net.CloseStatus;
+import com.gdresearch.net.connection.IConnection;
 
 public interface ServerListener {
 

@@ -30,15 +30,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.connection;
+package com.gdresearch.net.connection;
 
-import com.ancevt.net.CloseStatus;
+import com.gdresearch.net.CloseStatus;
 
-public interface ConnectionListener {
+public class ConnectionListenerAdapter implements ConnectionListener{
+    @Override
+    public void connectionEstablished() {
 
-    void connectionEstablished();
+    }
 
-    void connectionBytesReceived(byte[] bytes);
+    @Override
+    public void connectionBytesReceived(byte[] bytes) {
 
-    void connectionClosed(CloseStatus status);
+    }
+
+    @Override
+    public void connectionClosed(CloseStatus status) {
+
+    }
 }

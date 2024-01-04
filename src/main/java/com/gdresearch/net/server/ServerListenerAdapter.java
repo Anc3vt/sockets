@@ -30,23 +30,40 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.connection;
+package com.gdresearch.net.server;
 
-import com.ancevt.net.CloseStatus;
+import com.gdresearch.net.CloseStatus;
+import com.gdresearch.net.connection.IConnection;
 
-public class ConnectionListenerAdapter implements ConnectionListener{
+public class ServerListenerAdapter implements ServerListener{
+
     @Override
-    public void connectionEstablished() {
+    public void serverStarted() {
 
     }
 
     @Override
-    public void connectionBytesReceived(byte[] bytes) {
+    public void connectionAccepted(IConnection connection) {
 
     }
 
     @Override
-    public void connectionClosed(CloseStatus status) {
+    public void connectionClosed(IConnection connection, CloseStatus status) {
+
+    }
+
+    @Override
+    public void connectionBytesReceived(IConnection connection, byte[] bytes) {
+
+    }
+
+    @Override
+    public void serverClosed(CloseStatus status) {
+
+    }
+
+    @Override
+    public void connectionEstablished(IConnection connectionWithClient) {
 
     }
 }

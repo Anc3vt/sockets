@@ -30,20 +30,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.test;
+package com.gdresearch.net.test;
 
 import com.ancevt.commons.Holder;
 import com.ancevt.commons.concurrent.Lock;
 import com.ancevt.commons.io.ByteInputReader;
 import com.ancevt.commons.io.ByteOutputWriter;
 import com.ancevt.commons.unix.UnixDisplay;
-import com.ancevt.net.CloseStatus;
-import com.ancevt.net.connection.ConnectionListenerAdapter;
-import com.ancevt.net.connection.IConnection;
-import com.ancevt.net.connection.TcpConnection;
-import com.ancevt.net.server.IServer;
-import com.ancevt.net.server.ServerListenerAdapter;
-import com.ancevt.net.server.TcpServer;
+import com.gdresearch.net.CloseStatus;
+import com.gdresearch.net.connection.ConnectionListenerAdapter;
+import com.gdresearch.net.connection.IConnection;
+import com.gdresearch.net.connection.TcpConnection;
+import com.gdresearch.net.server.IServer;
+import com.gdresearch.net.server.ServerListenerAdapter;
+import com.gdresearch.net.server.TcpServer;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
@@ -195,13 +195,21 @@ public class TcpTest {
         assertThat(actualTestBigStringMoreThanPacketSize(10000000 / 10), equalTo(true));
     }
 
+    public static String repeat(String value, int count) {
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            stringBuilder.append(value);
+        }
+        return stringBuilder.toString();
+    }
+
     @Test
     void testMultithreadingSend() throws InterruptedException {
         final int clientCount = 100;
 
         CountDownLatch countDownLatch = new CountDownLatch(clientCount);
 
-        String sourceString = "string-10 ".repeat(1000 / 10);
+        String sourceString = repeat("string-10 ", 1000 / 10);
         byte[] sourceStringBytes = sourceString.getBytes(StandardCharsets.UTF_8);
 
         server.addServerListener(new ServerListenerAdapter() {
@@ -276,7 +284,7 @@ public class TcpTest {
         boolean result;
 
         String sourceString = "string--" + (int) (Math.random() * 9) + " ";
-        sourceString = sourceString.repeat(repeats);
+        sourceString = repeat(sourceString, repeats);
         String resultString = sendFromServerReceiveOnClient(sourceString);
         result = resultString.equals(sourceString);
 

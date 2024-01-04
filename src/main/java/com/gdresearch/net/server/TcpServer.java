@@ -30,15 +30,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.server;
+package com.gdresearch.net.server;
 
 import com.ancevt.commons.Holder;
 import com.ancevt.commons.concurrent.Lock;
 import com.ancevt.commons.unix.UnixDisplay;
-import com.ancevt.net.CloseStatus;
-import com.ancevt.net.connection.ConnectionListener;
-import com.ancevt.net.connection.IConnection;
-import com.ancevt.net.connection.TcpConnection;
+import com.gdresearch.net.CloseStatus;
+import com.gdresearch.net.connection.ConnectionListener;
+import com.gdresearch.net.connection.IConnection;
+import com.gdresearch.net.connection.TcpConnection;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 
@@ -250,7 +250,7 @@ public class TcpServer implements IServer {
     public static void main(String[] args) {
         UnixDisplay.setEnabled(true);
 
-        var lock = new Lock();
+        Lock lock = new Lock();
 
         Holder<Boolean> result = new Holder<>(false);
 
@@ -264,7 +264,6 @@ public class TcpServer implements IServer {
             @Override
             public void connectionAccepted(IConnection connection) {
                 debug("com.ancevt.net.tcpb254.server.TcpServer.connectionAccepted(TcpServer:193): <A>ACCEPTED");
-                System.out.println(connection);
             }
 
             @Override
@@ -297,7 +296,7 @@ public class TcpServer implements IServer {
             @Override
             public void connectionEstablished() {
                 debug("<g>Connection connectionEstablished(TcpServer:225)");
-                connection.send("Hello".repeat(10).getBytes(StandardCharsets.UTF_8));
+                connection.send("Hello".getBytes(StandardCharsets.UTF_8));
             }
 
             @Override
@@ -326,7 +325,7 @@ public class TcpServer implements IServer {
         }
 
         System.out.println("done " + times);
-        System.out.println("-".repeat(100));
+        System.out.println("----------------------");
 
         if(result.getValue()) {
             debug("TcpServer:317: <a><G>SUCCESS");

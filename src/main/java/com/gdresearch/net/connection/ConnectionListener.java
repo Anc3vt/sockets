@@ -30,37 +30,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net;
+package com.gdresearch.net.connection;
 
-public class CloseStatus {
+import com.gdresearch.net.CloseStatus;
 
-    private Throwable throwable;
+public interface ConnectionListener {
 
-    public CloseStatus(Throwable throwable) {
-        this.throwable = throwable;
-    }
+    void connectionEstablished();
 
-    public CloseStatus() {
+    void connectionBytesReceived(byte[] bytes);
 
-    }
-
-    public boolean isError() {
-        return throwable != null;
-    }
-
-    public String getErrorMessage() {
-        return isError() ? throwable.getMessage() : "";
-    }
-
-    public Throwable getThrowable() {
-        return throwable;
-    }
-
-    @Override
-    public String toString() {
-        return "CloseStatus{" +
-                "isError=" + isError() +
-                ", throwable=" + throwable +
-                '}';
-    }
+    void connectionClosed(CloseStatus status);
 }

@@ -15,40 +15,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.server;
+package com.ancevt.net.usync;
 
-import com.ancevt.net.CloseStatus;
-import com.ancevt.net.connection.IConnection;
+class Receiver {
 
-public class ServerListenerAdapter implements ServerListener{
+    private final Sender sender;
 
-    @Override
-    public void serverStarted() {
-
+    public Receiver(Sender sender) {
+        this.sender = sender;
     }
 
-    @Override
-    public void connectionAccepted(IConnection connection) {
 
-    }
-
-    @Override
-    public void connectionClosed(IConnection connection, CloseStatus status) {
-
-    }
-
-    @Override
-    public void connectionBytesReceived(IConnection connection, byte[] bytes) {
-
-    }
-
-    @Override
-    public void serverClosed(CloseStatus status) {
-
-    }
-
-    @Override
-    public void connectionEstablished(IConnection connectionWithClient) {
-
-    }
 }

@@ -1,3 +1,20 @@
+/**
+ * Copyright (C) 2023 the original author or authors.
+ * See the notice.md file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.ancevt.net.usync;
 
 import com.ancevt.commons.concurrent.Async;
@@ -35,19 +52,21 @@ class USyncServerImpl implements USyncServer {
     private final DatagramChannel datagramChannel;
     final Map<Integer, USyncSession> sessions = new ConcurrentHashMap<>();
 
-    final Map<Integer, USyncUSyncSessionImpl> sessionsCopy = new ConcurrentHashMap<>();
+    final Map<Integer, USyncSessionImpl> sessionsCopy = new ConcurrentHashMap<>();
 
     @Getter
     @Setter
     private int interval;
+    private final int persistMessageDelay;
     private Thread sendLoopThread;
     private Thread receiveLoopThread;
 
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
-    public USyncServerImpl(String bindHost, int bindPort, int bufferSize, int interval, boolean blocking) {
+    public USyncServerImpl(String bindHost, int bindPort, int bufferSize, int interval, boolean blocking, int persistMessageDelay) {
         this.bufferSize = bufferSize;
         this.interval = interval;
+        this.persistMessageDelay = persistMessageDelay;
 
         try {
             datagramChannel = Utils.bindChannel(bindHost == null ? null : new InetSocketAddress(bindHost, bindPort));
@@ -138,18 +157,18 @@ class USyncServerImpl implements USyncServer {
                     while (sendLoopThread != null) {
 
 
-                        for (USyncUSyncSessionImpl s : sessionsCopy.values()) {
+                        for (USyncSessionImpl s : sessionsCopy.values()) {
                             SocketAddress socketAddress = s.getSocketAddress();
                             if (socketAddress != null) {
                                 try {
-                                    ByteBuffer byteBufferToSend = s.getByteBufferToSend();
+                                    ByteBuffer byteBufferToSend = s.sender.getPlainByteBufferToSend();
 
                                     if (byteBufferToSend != null) {
                                         datagramChannel.send(byteBufferToSend, socketAddress);
                                         //System.out.println("send " + Arrays.toString(byteBufferToSend.array()));
                                     }
 
-                                    Collection<SendingMessage> sendingMessages = s.getSendingMessages().values();
+                                    Collection<SendingMessage> sendingMessages = s.sender.getSendingMessages().values();
 
                                     for (SendingMessage message : sendingMessages) {
                                         byte[] src = message.getChunkBytes();
@@ -238,11 +257,10 @@ class USyncServerImpl implements USyncServer {
         switch (type) {
             case Type.REQUEST_SESSION_ID: {
                 if (!isSourceSocketAddressAlreadyExists(sourceSocketAddress)) {
-                    USyncUSyncSessionImpl session = new USyncUSyncSessionImpl(this, datagramChannel, sourceSocketAddress, bufferSize);
+                    USyncSessionImpl session = new USyncSessionImpl(this, datagramChannel, sourceSocketAddress, bufferSize, persistMessageDelay);
                     sessions.put(session.getId(), session);
                     sessionsCopy.put(session.getId(), session);
-                    session.atomicSendBytes(
-                        sourceSocketAddress,
+                    session.sender.atomicSendBytes(
                         ByteOutput.newInstance(2)
                             .writeByte(Type.SESSION_ID)
                             .writeByte(session.getId())
@@ -260,12 +278,10 @@ class USyncServerImpl implements USyncServer {
                 }
                 break;
             }
-            case Type.ACKNOWLEDGE:
-            case Type.CHUNK:
-            case Type.START_CHUNKS:
-            case Type.PLAIN: {
+
+            default: {
                 int sessionId = in.readUnsignedByte();
-                USyncUSyncSessionImpl session = (USyncUSyncSessionImpl) sessions.get(sessionId);
+                USyncSessionImpl session = (USyncSessionImpl) sessions.get(sessionId);
                 if (session != null) {
                     session.receiveBytes(sourceSocketAddress, type, in);
                 }
@@ -320,9 +336,10 @@ class USyncServerImpl implements USyncServer {
     @SneakyThrows
     public static void main(String[] args) {
         int bufferSize = 64;
-        int interval = 5;
+        int interval = 250;
+        int persistMessageDelay = 10;
 
-        server = new USyncServerImpl("0.0.0.0", 8888, bufferSize, interval, true);
+        server = new USyncServerImpl("0.0.0.0", 8888, bufferSize, interval, true, persistMessageDelay);
         server.addUSyncServerListener(new Listener() {
             @Override
             public void uSyncServerSessionStart(USyncSession session) {
@@ -348,7 +365,7 @@ class USyncServerImpl implements USyncServer {
                 session.sendObject(
                     MyDto.builder()
                         .id(149)
-                        .name("response")
+                        .name("request")
                         .build()
                 );
             }
@@ -366,7 +383,7 @@ class USyncServerImpl implements USyncServer {
 
         System.out.println("start");
 
-        client = new USyncClientImpl("localhost", 8888, bufferSize, interval, false) {
+        client = new USyncClientImpl("localhost", 8888, bufferSize, interval, false, persistMessageDelay) {
             @Override
             public void onSessionStart(int sessionId) {
                 System.out.println("session created");

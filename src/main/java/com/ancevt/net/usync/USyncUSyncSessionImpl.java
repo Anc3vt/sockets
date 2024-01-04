@@ -1,5 +1,7 @@
-package com.ancevt.net.udp;
+package com.ancevt.net.usync;
 
+import com.ancevt.commons.concurrent.Async;
+import com.ancevt.commons.exception.NotImplementedException;
 import com.ancevt.commons.io.ByteInput;
 import com.ancevt.commons.io.ByteOutput;
 import lombok.Getter;
@@ -11,20 +13,23 @@ import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
-public class Session {
+class USyncUSyncSessionImpl implements USyncSession {
 
     private static final int MAX_SESSIONS = 256;
+    private static final long DISCONNECT_NOTIFYING_DELAY_SECONDS = 1;
     private static int idCounter = 0;
     @Getter
     private final Map<Integer, SendingMessage> sendingMessages = new ConcurrentHashMap<>();
     @Getter
     private final Map<Integer, ReceivingMessage> receivingMessages = new ConcurrentHashMap<>();
-    private final UdpServer udpServer;
+    private final USyncServerImpl uSyncServer;
     private final DatagramChannel datagramChannel;
     @Getter
     private SocketAddress socketAddress;
+    @Getter
     private final int bufferSize;
     @Getter
     private final int id;
@@ -33,8 +38,9 @@ public class Session {
     @Getter
     private boolean disposed;
 
-    Session(UdpServer udpServer, DatagramChannel datagramChannel, SocketAddress socketAddress, int bufferSize) {
-        this.udpServer = udpServer;
+
+    USyncUSyncSessionImpl(USyncServerImpl uSyncServer, DatagramChannel datagramChannel, SocketAddress socketAddress, int bufferSize) {
+        this.uSyncServer = uSyncServer;
         this.datagramChannel = datagramChannel;
         this.socketAddress = socketAddress;
         this.bufferSize = bufferSize;
@@ -46,15 +52,28 @@ public class Session {
         this.id = ++idCounter;
     }
 
-    public void atomicSendBytes(SocketAddress socketAddress, byte[] bytes) {
+    @Override
+    public long getBytesReceived() {
+        throw new NotImplementedException("not implemented yet");
+    }
+
+    @Override
+    public long getBytesSent() {
+        throw new NotImplementedException("not implemented yet");
+    }
+
+    public ByteBuffer atomicSendBytes(SocketAddress socketAddress, byte[] bytes) {
         this.socketAddress = socketAddress;
 
-        byteBufferToSend = ByteBuffer.wrap(bytes);
+        byte[] bytesToSend = new byte[bufferSize];
+        System.arraycopy(bytes, 0, bytesToSend, 0, bytes.length);
+        ByteBuffer byteBufferToSend = ByteBuffer.wrap(bytesToSend);
         try {
             datagramChannel.send(byteBufferToSend, this.socketAddress);
         } catch (IOException e) {
             log.warn(e.getMessage(), e);
         }
+        return byteBufferToSend;
     }
 
     public void receiveBytes(SocketAddress socketAddress, int type, ByteInput in) {
@@ -74,7 +93,7 @@ public class Session {
                 if (!receivingMessages.containsKey(messageId)) {
                     ReceivingMessage receivingMessage = new ReceivingMessage(messageId, size, dto);
                     receivingMessages.put(messageId, receivingMessage);
-                    atomicSendBytes(socketAddress, UdpUtils.createAcknowledgeBytes(id, messageId, 0));
+                    atomicSendBytes(socketAddress, Utils.createAcknowledgeBytes(id, messageId, 0));
                 }
                 break;
             }
@@ -89,7 +108,7 @@ public class Session {
                     receivingMessage.next();
                     atomicSendBytes(
                         socketAddress,
-                        UdpUtils.createAcknowledgeBytes(id, messageId, receivingMessage.getPosition())
+                        Utils.createAcknowledgeBytes(id, messageId, receivingMessage.getPosition())
                     );
 
                     if (receivingMessage.isTotallyReceived()) {
@@ -98,20 +117,23 @@ public class Session {
                             String className = byteInput.readUtf(short.class);
                             String json = byteInput.readUtf(int.class);
                             try {
-                                Object object = UdpUtils.gson().fromJson(json, Class.forName(className));
-                                udpServer.onObjectReceived(this, object);
+
+                                System.out.println(json);
+
+                                Object object = Utils.gson().fromJson(json, Class.forName(className));
+                                uSyncServer.onObjectReceive(this, object);
                             } catch (ClassNotFoundException e) {
                                 log.warn(e.getMessage(), e);
                             }
 
                         } else {
-                            udpServer.onMessageReceived(this, receivingMessage.getBytes());
+                            uSyncServer.onMessageReceive(this, receivingMessage.getBytes());
                         }
 
                         receivingMessages.remove(messageId);
                         atomicSendBytes(
                             socketAddress,
-                            UdpUtils.createMessageReceivedBytes(id, messageId)
+                            Utils.createMessageReceivedBytes(id, messageId)
                         );
                     }
                 }
@@ -140,10 +162,16 @@ public class Session {
         }
     }
 
+    @Override
     public void send(byte[] bytes) {
-        atomicSendBytes(socketAddress, bytes);
+        ByteOutput byteOutput = ByteOutput.newInstance();
+        byteOutput.writeByte(Type.PLAIN);
+        byteOutput.writeByte(id);
+        byteOutput.write(bytes);
+        byteBufferToSend = atomicSendBytes(socketAddress, byteOutput.toArray());
     }
 
+    @Override
     public void sendMessage(byte[] bytes) {
         int messageId = 1;
         while (sendingMessages.containsKey(messageId)) {
@@ -155,6 +183,7 @@ public class Session {
         atomicSendBytes(socketAddress, sendingMessage.getInitialBytes());
     }
 
+    @Override
     public void sendObject(Object object) {
         int messageId = 1;
         while (sendingMessages.containsKey(messageId)) {
@@ -163,7 +192,7 @@ public class Session {
 
         ByteOutput byteOutput = ByteOutput.newInstance();
         byteOutput.writeUtf(short.class, object.getClass().getName());
-        byteOutput.writeUtf(int.class, UdpUtils.gson().toJson(object));
+        byteOutput.writeUtf(int.class, Utils.gson().toJson(object));
         byte[] bytes = byteOutput.toArray();
 
         SendingMessage sendingMessage = new SendingMessage(messageId, bytes, id, bufferSize, true);
@@ -171,13 +200,44 @@ public class Session {
         atomicSendBytes(socketAddress, sendingMessage.getInitialBytes());
     }
 
-    private void bytesReceived(byte[] data) {
-        udpServer.onBytesReceived(this, data);
+    @Override
+    public void disconnect() {
+        send(
+            ByteOutput.newInstance()
+                .writeByte(Type.DISCONNECTED)
+                .toArray()
+        );
+
+        Async.runLater(DISCONNECT_NOTIFYING_DELAY_SECONDS, TimeUnit.SECONDS, () -> {
+            dispose();
+            uSyncServer.getSessions().remove(getId());
+            uSyncServer.sessions.remove(getId());
+            uSyncServer.sessionsCopy.remove(getId());
+            uSyncServer.onSessionDisconnect(this);
+        });
     }
 
+    private void bytesReceived(byte[] bytes) {
+        //System.out.println("s receive " + Arrays.toString(bytes));
+        uSyncServer.onBytesReceive(this, bytes);
+    }
+
+    @Override
+    public USyncServer getServer() {
+        return uSyncServer;
+    }
 
     public void dispose() {
         disposed = true;
     }
 
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder("USyncUSyncSessionImpl{");
+        sb.append("socketAddress=").append(socketAddress);
+        sb.append(", id=").append(id);
+        sb.append(", disposed=").append(disposed);
+        sb.append('}');
+        return sb.toString();
+    }
 }

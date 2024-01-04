@@ -1,8 +1,10 @@
-package com.ancevt.net.udp;
+package com.ancevt.net.usync;
 
+import com.ancevt.commons.exception.NotImplementedException;
 import com.ancevt.commons.io.ByteInput;
 import com.ancevt.commons.io.ByteOutput;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -10,19 +12,26 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 
 @Slf4j
-public class UdpClientImpl implements UdpClient {
+class USyncClientImpl implements USyncClient {
 
     private final String host;
     private final int port;
+
+    @Getter
     private final int bufferSize;
     private final DatagramChannel datagramChannel;
     private final Map<Integer, SendingMessage> sendingMessages = new ConcurrentHashMap<>();
     private final Map<Integer, ReceivingMessage> receivingMessages = new ConcurrentHashMap<>();
+
+    @Getter
+    @Setter
     private int interval;
     private SocketAddress socketAddress;
     private int sessionId;
@@ -33,14 +42,18 @@ public class UdpClientImpl implements UdpClient {
     @Getter
     private boolean disposed;
 
-    public UdpClientImpl(String host, int port, int bufferSize, int interval, boolean blocking) {
+    private final List<Integer> datagramReceiveIds = new CopyOnWriteArrayList<>();
+
+    private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+
+    public USyncClientImpl(String host, int port, int bufferSize, int interval, boolean blocking) {
         this.host = host;
         this.port = port;
         this.bufferSize = bufferSize;
         this.interval = interval;
 
         try {
-            datagramChannel = UdpUtils.bindChannel(null);
+            datagramChannel = Utils.bindChannel(null);
             datagramChannel.configureBlocking(blocking);
             socketAddress = new InetSocketAddress(host, port);
         } catch (IOException e) {
@@ -49,13 +62,55 @@ public class UdpClientImpl implements UdpClient {
     }
 
     @Override
-    public void setInterval(int interval) {
-        this.interval = interval;
+    public void addUSyncClientListener(Listener listener) {
+        listeners.add(listener);
     }
 
     @Override
-    public int getInterval() {
-        return interval;
+    public void removeUSyncClientListener(Listener listener) {
+        listeners.remove(listener);
+    }
+
+    @Override
+    public void removeAllUSyncClientListeners() {
+        listeners.clear();
+    }
+
+    @Override
+    public void start() {
+        setReceiveLoopActive(true);
+        setSendLoopActive(true);
+    }
+
+    @Override
+    public void stop() {
+        setReceiveLoopActive(false);
+        setSendLoopActive(false);
+    }
+
+    @Override
+    public int getBufferSize() {
+        return bufferSize;
+    }
+
+    @Override
+    public long getBytesReceived() {
+        throw new NotImplementedException("not implemented yet");
+    }
+
+    @Override
+    public long getBytesSent() {
+        throw new NotImplementedException("not implemented yet");
+    }
+
+    @Override
+    public int getSessionId() {
+        return sessionId;
+    }
+
+    @Override
+    public SocketAddress getSocketAddress() {
+        return socketAddress;
     }
 
     @Override
@@ -64,7 +119,7 @@ public class UdpClientImpl implements UdpClient {
         byteOutput.writeByte(Type.PLAIN);
         byteOutput.writeByte(sessionId);
         byteOutput.write(bytes);
-        atomicSendBytes(byteOutput.toArray());
+        byteBufferToSend = atomicSendBytes(byteOutput.toArray());
     }
 
     @Override
@@ -88,7 +143,7 @@ public class UdpClientImpl implements UdpClient {
 
         ByteOutput byteOutput = ByteOutput.newInstance();
         byteOutput.writeUtf(short.class, object.getClass().getName());
-        byteOutput.writeUtf(int.class, UdpUtils.gson().toJson(object));
+        byteOutput.writeUtf(int.class, Utils.gson().toJson(object));
         byte[] bytes = byteOutput.toArray();
 
         SendingMessage sendingMessage = new SendingMessage(messageId, bytes, sessionId, bufferSize, true);
@@ -96,17 +151,26 @@ public class UdpClientImpl implements UdpClient {
         atomicSendBytes(sendingMessage.getInitialBytes());
     }
 
-    private void atomicSendBytes(byte[] bytes) {
-        byteBufferToSend = ByteBuffer.wrap(bytes);
+    private ByteBuffer atomicSendBytes(byte[] bytes) {
+        byte[] bytesToSend = new byte[bufferSize + 4];
+        System.arraycopy(bytes, 0, bytesToSend, 0, bytes.length);
+        ByteBuffer bbts = ByteBuffer.wrap(bytesToSend);
         try {
-            datagramChannel.send(byteBufferToSend, socketAddress);
+            datagramChannel.send(bbts, socketAddress);
+            //System.out.println("send " + Arrays.toString(bts.array()));
+
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.warn(e.getMessage(), e);
         }
+        return bbts;
     }
 
     private void atomicReceiveBytes(byte[] bytes) {
         ByteInput in = ByteInput.newInstance(bytes);
+
+        int recId = in.readInt();
+        if(datagramReceiveIds.contains(recId)) return;
+        datagramReceiveIds.add(recId);
 
         int type = in.readUnsignedByte();
 
@@ -114,14 +178,14 @@ public class UdpClientImpl implements UdpClient {
             case Type.SESSION_ID: {
                 if (sessionId == 0) {
                     this.sessionId = in.readUnsignedByte();
-                    onSessionCreated(sessionId);
+                    onSessionStart(sessionId);
                 }
                 break;
             }
             case Type.PLAIN: {
                 int sessionId = in.readUnsignedByte();
                 byte[] data = in.readBytes(bytes.length - 2);
-                onBytesReceived(data);
+                onBytesReceive(data);
                 break;
             }
             case Type.START_CHUNKS: {
@@ -133,7 +197,7 @@ public class UdpClientImpl implements UdpClient {
                 if (!receivingMessages.containsKey(messageId)) {
                     ReceivingMessage receivingMessage = new ReceivingMessage(messageId, size, dto);
                     receivingMessages.put(messageId, receivingMessage);
-                    atomicSendBytes(UdpUtils.createAcknowledgeBytes(sessionId, messageId, 0));
+                    atomicSendBytes(Utils.createAcknowledgeBytes(sessionId, messageId, 0));
                 }
                 break;
             }
@@ -148,7 +212,7 @@ public class UdpClientImpl implements UdpClient {
                     receivingMessage.addBytes(data);
                     receivingMessage.next();
                     atomicSendBytes(
-                        UdpUtils.createAcknowledgeBytes(sessionId, messageId, receivingMessage.getPosition())
+                        Utils.createAcknowledgeBytes(sessionId, messageId, receivingMessage.getPosition())
                     );
 
                     if (receivingMessage.isTotallyReceived()) {
@@ -159,19 +223,19 @@ public class UdpClientImpl implements UdpClient {
                             String className = byteInput.readUtf(short.class);
                             String json = byteInput.readUtf(int.class);
                             try {
-                                Object object = UdpUtils.gson().fromJson(json, Class.forName(className));
-                                onObjectReceived(object);
+                                Object object = Utils.gson().fromJson(json, Class.forName(className));
+                                onObjectReceive(object);
                             } catch (ClassNotFoundException e) {
                                 log.warn(e.getMessage(), e);
                             }
 
                         } else {
-                            onMessageReceived(receivingMessage.getBytes());
+                            onMessageReceive(receivingMessage.getBytes());
                         }
 
                         receivingMessages.remove(messageId);
                         atomicSendBytes(
-                            UdpUtils.createMessageReceivedBytes(sessionId, messageId)
+                            Utils.createMessageReceivedBytes(sessionId, messageId)
                         );
                     }
                 }
@@ -202,7 +266,7 @@ public class UdpClientImpl implements UdpClient {
             case Type.DISCONNECTED: {
                 if (!disposed) {
                     dispose();
-                    onDisconnect();
+                    onNormalDisconnect();
                 }
                 break;
             }
@@ -236,22 +300,28 @@ public class UdpClientImpl implements UdpClient {
                             if (socketAddress != null) {
                                 if (byteBufferToSend != null) {
                                     datagramChannel.send(byteBufferToSend, socketAddress);
+                                    //System.out.println("send " + Arrays.toString(byteBufferToSend.array()));
                                 }
 
                                 for (SendingMessage message : sendingMessages.values()) {
-                                    atomicSendBytes(message.getChunkBytes());
+                                    byte[] src = message.getChunkBytes();
+                                    byte[] bytesToSend = new byte[bufferSize];
+                                    System.arraycopy(src, 0, bytesToSend, 0, src.length);
+                                    ByteBuffer bts = ByteBuffer.wrap(bytesToSend);
+                                    datagramChannel.send(bts, socketAddress);
+                                    //System.out.println("send " + Arrays.toString(bts.array()));
                                 }
 
-                                ByteBuffer byteBuffer = ByteBuffer.allocate(bufferSize);
-                                SocketAddress socketAddress = datagramChannel.receive(byteBuffer);
-                                if (socketAddress != null) {
-                                    atomicReceiveBytes(byteBuffer.array());
-                                }
+//                                ByteBuffer byteBuffer = ByteBuffer.allocate(bufferSize);
+//                                SocketAddress socketAddress = datagramChannel.receive(byteBuffer);
+//                                if (socketAddress != null) {
+//                                    atomicReceiveBytes(byteBuffer.array());
+//                                }
 
                                 Thread.sleep(interval);
                             }
                         } catch (IOException e) {
-                            throw new RuntimeException(e);
+                            log.debug(e.getMessage(), e);
                         } catch (InterruptedException e) {
 
                         }
@@ -282,10 +352,10 @@ public class UdpClientImpl implements UdpClient {
                 () -> {
                     while (receiveLoopThread != null) {
                         receive();
-
                         try {
                             Thread.sleep(interval);
                         } catch (InterruptedException e) {
+                            log.debug(e.getMessage(), e);
                         }
                     }
                 }
@@ -305,10 +375,15 @@ public class UdpClientImpl implements UdpClient {
         try {
             SocketAddress sourceSocketAddress = datagramChannel.receive(byteBuffer);
             if (sourceSocketAddress != null) {
-                atomicReceiveBytes(byteBuffer.array());
+                byteBuffer.flip();
+                byte[] bytes = new byte[byteBuffer.remaining()];
+                if(bytes.length == 0) return;
+                byteBuffer.get(bytes);
+
+                atomicReceiveBytes(bytes);
             }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.error(e.getMessage(), e);
         }
     }
 
@@ -319,48 +394,37 @@ public class UdpClientImpl implements UdpClient {
 
     @Override
     public void dispose() {
-        if (sendLoopThread != null && sendLoopThread.isAlive()) {
-            sendLoopThread.interrupt();
-        }
-        sendLoopThread = null;
-
-        if (receiveLoopThread != null && receiveLoopThread.isAlive()) {
-            receiveLoopThread.interrupt();
-        }
-        receiveLoopThread = null;
+        removeAllUSyncClientListeners();
+        stop();
 
         try {
             datagramChannel.close();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.warn(e.getMessage(), e);
         }
         sessionId = 0;
-
         disposed = true;
     }
 
-    @Override
-    public void onSessionCreated(int sessionId) {
-
+    public void onSessionStart(int sessionId) {
+        listeners.forEach(l -> l.uSyncClientSessionStarted(sessionId));
     }
 
-    @Override
-    public void onBytesReceived(byte[] bytes) {
+    public void onBytesReceive(byte[] bytes) {
+        //System.out.println("c receive " + Arrays.toString(bytes));
 
+        listeners.forEach(l -> l.uSyncClientSessionBytesReceived(bytes));
     }
 
-    @Override
-    public void onMessageReceived(byte[] bytes) {
-
+    public void onMessageReceive(byte[] bytes) {
+        listeners.forEach(l -> l.uSyncClientMessageReceived(bytes));
     }
 
-    @Override
-    public void onObjectReceived(Object object) {
-
+    public void onObjectReceive(Object object) {
+        listeners.forEach(l -> l.uSyncClientObjectReceived(object));
     }
 
-    @Override
-    public void onDisconnect() {
-
+    public void onNormalDisconnect() {
+        listeners.forEach(Listener::uSyncClientNormalDisconnected);
     }
 }

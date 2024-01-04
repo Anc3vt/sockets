@@ -1,4 +1,4 @@
-package com.ancevt.net.udp;
+package com.ancevt.net.usync;
 
 import com.ancevt.commons.io.ByteOutput;
 import com.google.gson.Gson;
@@ -17,7 +17,7 @@ import java.nio.channels.DatagramChannel;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-class UdpUtils {
+class Utils {
 
     private static Gson gson;
 

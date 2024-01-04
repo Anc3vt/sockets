@@ -1,4 +1,4 @@
-package com.ancevt.net.udp;
+package com.ancevt.net.usync;
 
 import lombok.Getter;
 

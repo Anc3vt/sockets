@@ -1,7 +1,7 @@
-package com.ancevt.net.udp;
+package com.ancevt.net.usync;
 
 class Type {
-    public static final int REQUEST_SESSION_ID = 0;
+    public static final int REQUEST_SESSION_ID = 9;
     public static final int SESSION_ID = 1;
     public static final int PLAIN = 2;
     public static final int START_CHUNKS = 3;

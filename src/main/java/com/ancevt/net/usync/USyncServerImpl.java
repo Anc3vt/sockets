@@ -1,12 +1,16 @@
-package com.ancevt.net.udp;
+package com.ancevt.net.usync;
 
 import com.ancevt.commons.concurrent.Async;
+import com.ancevt.commons.exception.NotImplementedException;
 import com.ancevt.commons.io.ByteInput;
 import com.ancevt.commons.io.ByteOutput;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -16,26 +20,37 @@ import java.nio.channels.DatagramChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
-public class UdpServerImpl implements UdpServer {
+
+@Slf4j
+class USyncServerImpl implements USyncServer {
 
     private final int bufferSize;
     private final DatagramChannel datagramChannel;
-    private final Map<Integer, Session> sessions = new ConcurrentHashMap<>();
+    final Map<Integer, USyncSession> sessions = new ConcurrentHashMap<>();
+
+    final Map<Integer, USyncUSyncSessionImpl> sessionsCopy = new ConcurrentHashMap<>();
+
+    @Getter
+    @Setter
     private int interval;
     private Thread sendLoopThread;
     private Thread receiveLoopThread;
 
-    public UdpServerImpl(String bindHost, int bindPort, int bufferSize, int interval, boolean blocking) {
+    private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+
+    public USyncServerImpl(String bindHost, int bindPort, int bufferSize, int interval, boolean blocking) {
         this.bufferSize = bufferSize;
         this.interval = interval;
 
         try {
-            datagramChannel = UdpUtils.bindChannel(bindHost == null ? null : new InetSocketAddress(bindHost, bindPort));
+            datagramChannel = Utils.bindChannel(bindHost == null ? null : new InetSocketAddress(bindHost, bindPort));
             datagramChannel.configureBlocking(blocking);
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -43,13 +58,55 @@ public class UdpServerImpl implements UdpServer {
     }
 
     @Override
-    public int getInterval() {
-        return interval;
+    public void addUSyncServerListener(Listener listener) {
+        listeners.add(listener);
     }
 
     @Override
-    public void setInterval(int interval) {
-        this.interval = interval;
+    public void removeUSyncServerListener(Listener listener) {
+        listeners.remove(listener);
+    }
+
+    @Override
+    public void removeAllUSyncServerListeners() {
+        listeners.clear();
+    }
+
+    @Override
+    public Map<Integer, USyncSession> getSessions() {
+        return sessions;
+    }
+
+    @Override
+    public int getBufferSize() {
+        return bufferSize;
+    }
+
+    @Override
+    public long getBytesReceived() {
+        throw new NotImplementedException("not implemented yet");
+    }
+
+    @Override
+    public long getBytesSent() {
+        throw new NotImplementedException("not implemented yet");
+    }
+
+    @Override
+    public void disconnectAll() {
+        sessions.forEach((id, s) -> s.disconnect());
+    }
+
+    @Override
+    public void start() {
+        setReceiveLoopActive(true);
+        setSendLoopActive(true);
+    }
+
+    @Override
+    public void stop() {
+        setReceiveLoopActive(false);
+        setSendLoopActive(false);
     }
 
     @Override
@@ -58,8 +115,14 @@ public class UdpServerImpl implements UdpServer {
         try {
             SocketAddress sourceSocketAddress = datagramChannel.receive(byteBuffer);
             if (sourceSocketAddress != null) {
-                actualAtomicReceiveBytes(sourceSocketAddress, byteBuffer.array());
+                byteBuffer.flip();
+                byte[] bytes = new byte[byteBuffer.remaining()];
+                byteBuffer.get(bytes);
+                if(bytes.length == 0) return;
+                atomicReceiveBytes(sourceSocketAddress, bytes);
+                //System.out.println("rec " + Arrays.toString(bytes));
             }
+
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -75,7 +138,7 @@ public class UdpServerImpl implements UdpServer {
                     while (sendLoopThread != null) {
 
 
-                        for (Session s : sessions.values()) {
+                        for (USyncUSyncSessionImpl s : sessionsCopy.values()) {
                             SocketAddress socketAddress = s.getSocketAddress();
                             if (socketAddress != null) {
                                 try {
@@ -83,12 +146,17 @@ public class UdpServerImpl implements UdpServer {
 
                                     if (byteBufferToSend != null) {
                                         datagramChannel.send(byteBufferToSend, socketAddress);
+                                        //System.out.println("send " + Arrays.toString(byteBufferToSend.array()));
                                     }
 
                                     Collection<SendingMessage> sendingMessages = s.getSendingMessages().values();
 
                                     for (SendingMessage message : sendingMessages) {
-                                        s.atomicSendBytes(s.getSocketAddress(), message.getChunkBytes());
+                                        byte[] src = message.getChunkBytes();
+                                        byte[] bytesToSend = new byte[bufferSize];
+                                        System.arraycopy(src, 0, bytesToSend, 0, src.length);
+                                        ByteBuffer bbts = ByteBuffer.wrap(bytesToSend);
+                                        datagramChannel.send(bbts, socketAddress);
                                     }
 
                                     Thread.sleep(interval);
@@ -153,24 +221,16 @@ public class UdpServerImpl implements UdpServer {
 
     @Override
     public void dispose() {
-        if (sendLoopThread != null && sendLoopThread.isAlive()) {
-            sendLoopThread.interrupt();
-        }
-        sendLoopThread = null;
-
-        if (receiveLoopThread != null && receiveLoopThread.isAlive()) {
-            receiveLoopThread.interrupt();
-        }
-        receiveLoopThread = null;
-
+        removeAllUSyncServerListeners();
+        stop();
         try {
             datagramChannel.close();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.warn(e.getMessage(), e);
         }
     }
 
-    private void actualAtomicReceiveBytes(SocketAddress sourceSocketAddress, byte[] bytes) {
+    private void atomicReceiveBytes(SocketAddress sourceSocketAddress, byte[] bytes) {
         ByteInput in = ByteInput.newInstance(bytes);
 
         int type = in.readUnsignedByte();
@@ -178,8 +238,9 @@ public class UdpServerImpl implements UdpServer {
         switch (type) {
             case Type.REQUEST_SESSION_ID: {
                 if (!isSourceSocketAddressAlreadyExists(sourceSocketAddress)) {
-                    Session session = new Session(this, datagramChannel, sourceSocketAddress, bufferSize);
+                    USyncUSyncSessionImpl session = new USyncUSyncSessionImpl(this, datagramChannel, sourceSocketAddress, bufferSize);
                     sessions.put(session.getId(), session);
+                    sessionsCopy.put(session.getId(), session);
                     session.atomicSendBytes(
                         sourceSocketAddress,
                         ByteOutput.newInstance(2)
@@ -187,24 +248,15 @@ public class UdpServerImpl implements UdpServer {
                             .writeByte(session.getId())
                             .toArray()
                     );
+                    onSessionStart(session);
                 }
                 break;
             }
             case Type.REQUEST_DISCONNECT: {
                 int sessionId = in.readUnsignedByte();
-                Session session = sessions.get(sessionId);
+                USyncSession session = sessions.get(sessionId);
                 if (session != null) {
-                    session.send(
-                        ByteOutput.newInstance()
-                            .writeByte(Type.DISCONNECTED)
-                            .toArray()
-                    );
-
-                    Async.runLater(1, TimeUnit.SECONDS, () -> {
-                        session.dispose();
-                        sessions.remove(sessionId);
-                        onSessionDisconnect(session);
-                    });
+                    session.disconnect();
                 }
                 break;
             }
@@ -213,7 +265,7 @@ public class UdpServerImpl implements UdpServer {
             case Type.START_CHUNKS:
             case Type.PLAIN: {
                 int sessionId = in.readUnsignedByte();
-                Session session = sessions.get(sessionId);
+                USyncUSyncSessionImpl session = (USyncUSyncSessionImpl) sessions.get(sessionId);
                 if (session != null) {
                     session.receiveBytes(sourceSocketAddress, type, in);
                 }
@@ -222,9 +274,18 @@ public class UdpServerImpl implements UdpServer {
         }
     }
 
+    void disconnectSession(USyncSession session) {
+        Async.runLater(1, TimeUnit.SECONDS, () -> {
+            session.dispose();
+            sessions.remove(session.getId());
+            sessionsCopy.remove(session.getId());
+            onSessionDisconnect(session);
+        });
+    }
+
     private boolean isSourceSocketAddressAlreadyExists(SocketAddress socketAddress) {
         InetSocketAddress inetSocketAddress = (InetSocketAddress) socketAddress;
-        for (Session s : sessions.values()) {
+        for (USyncSession s : sessions.values()) {
             InetSocketAddress sessionInetSocketAddress = (InetSocketAddress) s.getSocketAddress();
             if (Objects.equals(inetSocketAddress.getHostName(), sessionInetSocketAddress.getHostName()) &&
                 inetSocketAddress.getPort() == sessionInetSocketAddress.getPort()) return true;
@@ -233,47 +294,55 @@ public class UdpServerImpl implements UdpServer {
         return false;
     }
 
-    @Override
-    public void onBytesReceived(Session session, byte[] bytes) {
-
+    private void onSessionStart(USyncSession session) {
+        listeners.forEach(l -> l.uSyncServerSessionStart(session));
     }
 
-    @Override
-    public void onMessageReceived(Session session, byte[] data) {
-
+    public void onBytesReceive(USyncSession session, byte[] bytes) {
+        listeners.forEach(l -> l.uSyncServerBytesReceived(session, bytes));
     }
 
-    @Override
-    public void onObjectReceived(Session session, Object object) {
-
+    void onMessageReceive(USyncSession session, byte[] bytes) {
+        listeners.forEach(l -> l.uSyncServerMessageReceived(session, bytes));
     }
 
-    @Override
-    public void onSessionDisconnect(Session session) {
-
+    void onObjectReceive(USyncSession session, Object object) {
+        listeners.forEach(l -> l.uSyncServerObjectReceived(session, object));
     }
 
-    static UdpServer server;
-    static UdpClient client;
+    void onSessionDisconnect(USyncSession session) {
+        listeners.forEach(l -> l.uSyncServerSessionDisconnect(session));
+    }
+
+    static USyncServer server;
+    static USyncClient client;
 
     @SneakyThrows
     public static void main(String[] args) {
-        int bufferSize = 128;
+        int bufferSize = 64;
         int interval = 5;
 
-        server = new UdpServerImpl("0.0.0.0", 7777, bufferSize, interval, true) {
+        server = new USyncServerImpl("0.0.0.0", 8888, bufferSize, interval, true);
+        server.addUSyncServerListener(new Listener() {
             @Override
-            public void onBytesReceived(Session session, byte[] bytes) {
-                System.out.println("SERVER RECEIVED: " + Arrays.toString(bytes));
+            public void uSyncServerSessionStart(USyncSession session) {
+                System.out.println("SERVER SESSION START: " + session);
+
             }
 
             @Override
-            public void onMessageReceived(Session session, byte[] data) {
-                System.out.println("SERVER onMessageReceived " + new String(data, StandardCharsets.UTF_8));
+            public void uSyncServerBytesReceived(USyncSession session, byte[] bytes) {
+                System.out.println("SERVER RECEIVED bytes:: " + Arrays.toString(bytes));
             }
 
             @Override
-            public void onObjectReceived(Session session, Object object) {
+            public void uSyncServerMessageReceived(USyncSession session, byte[] bytes) {
+                System.out.println("SERVER onMessageReceived " + new String(bytes, StandardCharsets.UTF_8));
+
+            }
+
+            @Override
+            public void uSyncServerObjectReceived(USyncSession session, Object object) {
                 System.out.println("SERVER RECEIVED " + object.toString());
 
                 session.sendObject(
@@ -285,20 +354,23 @@ public class UdpServerImpl implements UdpServer {
             }
 
             @Override
-            public void onSessionDisconnect(Session session) {
+            public void uSyncServerSessionDisconnect(USyncSession session) {
                 System.out.println("SERVER DISCONNECT " + session);
+
             }
-        };
+        });
+
+
         server.setSendLoopActive(true);
         server.setReceiveLoopActive(true);
 
         System.out.println("start");
 
-        client = new UdpClientImpl("localhost", 7777, bufferSize, interval, false) {
+        client = new USyncClientImpl("localhost", 8888, bufferSize, interval, false) {
             @Override
-            public void onSessionCreated(int sessionId) {
+            public void onSessionStart(int sessionId) {
                 System.out.println("session created");
-                //send(new byte[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+                send(new byte[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
                 sendMessage("1Hello world 2Hello world 3Hello world4".getBytes(StandardCharsets.UTF_8));
 
                 sendObject(
@@ -310,12 +382,12 @@ public class UdpServerImpl implements UdpServer {
             }
 
             @Override
-            public void onBytesReceived(byte[] bytes) {
-                System.out.println("CLIENT RECEIVED: " + Arrays.toString(bytes));
+            public void onBytesReceive(byte[] bytes) {
+                System.out.println("CLIENT RECEIVED bytes: " + Arrays.toString(bytes));
             }
 
             @Override
-            public void onObjectReceived(Object object) {
+            public void onObjectReceive(Object object) {
                 System.out.println("CLIENT RECEIVED " + object.toString());
 
                 MyDto responseDto = (MyDto) object;
@@ -325,7 +397,7 @@ public class UdpServerImpl implements UdpServer {
             }
 
             @Override
-            public void onDisconnect() {
+            public void onNormalDisconnect() {
                 System.out.println("CLIENT DISCONNECT");
                 Async.runLater(2, TimeUnit.SECONDS, () -> System.exit(0));
             }

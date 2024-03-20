@@ -15,40 +15,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.server;
+package com.ancevt.net.usync;
 
-import com.ancevt.net.CloseStatus;
-import com.ancevt.net.connection.IConnection;
-
-public class ServerListenerAdapter implements ServerListener{
-
-    @Override
-    public void serverStarted() {
-
-    }
-
-    @Override
-    public void connectionAccepted(IConnection connection) {
-
-    }
-
-    @Override
-    public void connectionClosed(IConnection connection, CloseStatus status) {
-
-    }
-
-    @Override
-    public void connectionBytesReceived(IConnection connection, byte[] bytes) {
-
-    }
-
-    @Override
-    public void serverClosed(CloseStatus status) {
-
-    }
-
-    @Override
-    public void connectionEstablished(IConnection connectionWithClient) {
-
-    }
+class Type {
+    public static final int REQUEST_SESSION_ID = 9;
+    public static final int SESSION_ID = 1;
+    public static final int PLAIN = 2;
+    public static final int START_CHUNKS = 3;
+    public static final int CHUNK = 4;
+    public static final int ACKNOWLEDGE = 5;
+    public static final int MESSAGE_RECEIVED = 6;
+    public static final int REQUEST_DISCONNECT = 7;
+    public static final int DISCONNECTED = 8;
 }

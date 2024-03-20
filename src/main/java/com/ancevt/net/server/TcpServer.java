@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2022 the original author or authors.
+ * Copyright (C) 2023 the original author or authors.
  * See the notice.md file distributed with this work for additional
  * information regarding copyright ownership.
  *
@@ -8,21 +8,6 @@
  * You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-/*
- *     Copyright 2015-2022 Ancevt (me@ancevt.com)
- *
- * Licensed under the Apache License, Version 2.0 (the "LICENSE");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *          http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -250,7 +235,7 @@ public class TcpServer implements IServer {
     public static void main(String[] args) {
         UnixDisplay.setEnabled(true);
 
-        var lock = new Lock();
+        Lock lock = new Lock();
 
         Holder<Boolean> result = new Holder<>(false);
 
@@ -264,7 +249,6 @@ public class TcpServer implements IServer {
             @Override
             public void connectionAccepted(IConnection connection) {
                 debug("com.ancevt.net.tcpb254.server.TcpServer.connectionAccepted(TcpServer:193): <A>ACCEPTED");
-                System.out.println(connection);
             }
 
             @Override
@@ -297,7 +281,7 @@ public class TcpServer implements IServer {
             @Override
             public void connectionEstablished() {
                 debug("<g>Connection connectionEstablished(TcpServer:225)");
-                connection.send("Hello".repeat(10).getBytes(StandardCharsets.UTF_8));
+                connection.send("Hello".getBytes(StandardCharsets.UTF_8));
             }
 
             @Override
@@ -326,7 +310,7 @@ public class TcpServer implements IServer {
         }
 
         System.out.println("done " + times);
-        System.out.println("-".repeat(100));
+        System.out.println("----------------------");
 
         if(result.getValue()) {
             debug("TcpServer:317: <a><G>SUCCESS");

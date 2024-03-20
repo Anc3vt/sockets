@@ -15,40 +15,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.ancevt.net.server;
+package com.ancevt.net.usync;
 
-import com.ancevt.net.CloseStatus;
-import com.ancevt.net.connection.IConnection;
+import java.net.SocketAddress;
 
-public class ServerListenerAdapter implements ServerListener{
+public interface USyncSession {
 
-    @Override
-    public void serverStarted() {
+    int getId();
 
-    }
+    int getBufferSize();
 
-    @Override
-    public void connectionAccepted(IConnection connection) {
+    long getBytesReceived();
 
-    }
+    long getBytesSent();
 
-    @Override
-    public void connectionClosed(IConnection connection, CloseStatus status) {
+    void send(byte[] bytes);
 
-    }
+    void sendMessage(byte[] bytes);
 
-    @Override
-    public void connectionBytesReceived(IConnection connection, byte[] bytes) {
+    void sendObject(Object object);
 
-    }
+    void disconnect();
 
-    @Override
-    public void serverClosed(CloseStatus status) {
+    void dispose();
 
-    }
+    boolean isDisposed();
+    SocketAddress getSocketAddress();
 
-    @Override
-    public void connectionEstablished(IConnection connectionWithClient) {
-
-    }
+    USyncServer getServer();
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2022 the original author or authors.
+ * Copyright (C) 2023 the original author or authors.
  * See the notice.md file distributed with this work for additional
  * information regarding copyright ownership.
  *
@@ -8,21 +8,6 @@
  * You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-/*
- *     Copyright 2015-2022 Ancevt (me@ancevt.com)
- *
- * Licensed under the Apache License, Version 2.0 (the "LICENSE");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *          http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -195,13 +180,21 @@ public class TcpTest {
         assertThat(actualTestBigStringMoreThanPacketSize(10000000 / 10), equalTo(true));
     }
 
+    public static String repeat(String value, int count) {
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            stringBuilder.append(value);
+        }
+        return stringBuilder.toString();
+    }
+
     @Test
     void testMultithreadingSend() throws InterruptedException {
         final int clientCount = 100;
 
         CountDownLatch countDownLatch = new CountDownLatch(clientCount);
 
-        String sourceString = "string-10 ".repeat(1000 / 10);
+        String sourceString = repeat("string-10 ", 1000 / 10);
         byte[] sourceStringBytes = sourceString.getBytes(StandardCharsets.UTF_8);
 
         server.addServerListener(new ServerListenerAdapter() {
@@ -276,7 +269,7 @@ public class TcpTest {
         boolean result;
 
         String sourceString = "string--" + (int) (Math.random() * 9) + " ";
-        sourceString = sourceString.repeat(repeats);
+        sourceString = repeat(sourceString, repeats);
         String resultString = sendFromServerReceiveOnClient(sourceString);
         result = resultString.equals(sourceString);
 
